@@ -18,7 +18,7 @@ services:
     networks:
       - heyso-net
     restart: unless-stopped
-    # ports: ["3306:3306"]  # 외부 포트 오픈 금지(유지)
+    ports: ["3308:3306"]  # 외부 포트 오픈 금지(유지)
 
   api:
     image: ${REGISTRY}/${API_IMAGE}:${TAG}
