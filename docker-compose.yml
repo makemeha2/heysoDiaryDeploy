@@ -6,7 +6,7 @@ services:
       MARIADB_DATABASE: ${DB_NAME}
       MARIADB_USER: ${DB_USER}
       MARIADB_PASSWORD: ${DB_PASS}
-      MARIADB_ROOT_PASSWORD: ${DB_PASS}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASS}
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
@@ -33,7 +33,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASS}
       SERVER_PORT: 19090
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:19090/v3/api-docs || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:19090/v3/api-docs >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
