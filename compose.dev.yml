@@ -1,0 +1,12 @@
+services:
+  db:
+    ports:
+      - "3308:3306"
+
+  api:
+    ports:
+      - "19090:19090"
+
+  web:
+    ports:
+      - "8080:80"

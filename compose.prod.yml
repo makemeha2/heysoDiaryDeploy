@@ -1,0 +1,8 @@
+services:
+  db:
+    # 운영에서는 DB 포트를 외부에 열지 않음 (ports 제거)
+    ports: []
+
+  web:
+    ports:
+      - "127.0.0.1:8080:80"
