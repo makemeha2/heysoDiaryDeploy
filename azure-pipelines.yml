@@ -10,39 +10,28 @@ resources:
       name: makemeha2/HeysoDiaryBackEnd
       endpoint: makemeha2
       ref: refs/heads/main
-      trigger:
-        branches:
-          include:
-            - main
-
     - repository: frontend
       type: github
       name: makemeha2/HeysoDiaryFrontEnd
       endpoint: makemeha2
       ref: refs/heads/main
-      trigger:
-        branches:
-          include:
-            - main
 
 variables:
   GHCR_REGISTRY: ghcr.io
   GHCR_NAMESPACE: makemeha2
-
   API_IMAGE: heyso-diary-api
   WEB_IMAGE: heyso-diary-web
 
 stages:
-- stage: BuildAndPush
-  displayName: Build & Push Images (PROD)
+- stage: BuildPushDeployProd
+  displayName: Build & Push & Deploy (Self-hosted)
   jobs:
-  - job: Build
+  - job: BuildPushDeploy
+    displayName: Build/Push images then deploy on VM
     pool:
-      vmImage: ubuntu-latest
-    steps:
-    - checkout: self
-      path: deploy
+      name: heyso-deploy-prod
 
+    steps:
     - checkout: backend
       path: backend
 
@@ -55,7 +44,7 @@ stages:
         TAG="prod-${SHORT}"
         echo "##vso[task.setvariable variable=TAG]$TAG"
         echo "TAG=$TAG"
-      displayName: Set image TAG (prod-<sha>)
+      displayName: Set TAG
 
     - bash: |
         set -euo pipefail
@@ -64,11 +53,9 @@ stages:
 
     - bash: |
         set -euo pipefail
-        docker build \
-          -t $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(API_IMAGE):$(TAG) \
-          "$(Build.SourcesDirectory)/backend"
+        docker build -t $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(API_IMAGE):$(TAG) "$(Pipeline.Workspace)/backend"
         docker push $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(API_IMAGE):$(TAG)
-      displayName: Build & Push Backend image
+      displayName: Build & Push Backend
 
     - bash: |
         set -euo pipefail
@@ -77,37 +64,13 @@ stages:
           --build-arg VITE_API_BASE_URL="$(VITE_API_BASE_URL)" \
           --build-arg VITE_APP_ENV="PROD" \
           -t $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(WEB_IMAGE):$(TAG) \
-          "$(Build.SourcesDirectory)/frontend"
+          "$(Pipeline.Workspace)/frontend"
         docker push $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(WEB_IMAGE):$(TAG)
-      displayName: Build & Push Frontend image
-
-- stage: DeployProd
-  displayName: Deploy to PROD VM
-  dependsOn: BuildAndPush
-  condition: succeeded()
-  jobs:
-  - job: Deploy
-    pool:
-      vmImage: ubuntu-latest
-    steps:
-    - bash: |
-        set -euo pipefail
-        SHORT=$(echo "$(Build.SourceVersion)" | cut -c1-7)
-        TAG="prod-${SHORT}"
-        echo "##vso[task.setvariable variable=TAG]$TAG"
-        echo "Deploy TAG=$TAG"
-      displayName: Set deploy TAG
+      displayName: Build & Push Frontend
 
     - bash: |
         set -euo pipefail
-        mkdir -p ~/.ssh
-        echo "$(PROD_SSH_PRIVATE_KEY)" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H "$(PROD_SSH_HOST)" >> ~/.ssh/known_hosts
-      displayName: Setup SSH
-
-    - bash: |
-        set -euo pipefail
-        ssh -i ~/.ssh/id_rsa "$(PROD_SSH_USER)@$(PROD_SSH_HOST)" \
-          "cd /opt/heyso/heysoDiaryDeploy && ./scripts/deploy.sh prod $(TAG) $(GHCR_USER) $(GHCR_TOKEN)"
-      displayName: Deploy (pull + compose up)
+        cd /opt/heyso/heysoDiaryDeploy
+        chmod +x ./scripts/deploy.sh
+        ./scripts/deploy.sh prod $(TAG) $(GHCR_USER) $(GHCR_TOKEN)
+      displayName: Deploy on VM (compose pull + up)
