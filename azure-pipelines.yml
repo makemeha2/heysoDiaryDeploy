@@ -40,7 +40,7 @@ stages:
     - task: SSH@0
       displayName: Run deploy.sh on VM
       inputs:
-        sshEndpoint: 'makemeha2'   # <- SSH 서비스 커넥션 이름
+        sshEndpoint: 'heyso-prod-ssh'   # <- SSH 서비스 커넥션 이름
         runOptions: 'commands'
         commands: |
           set -euo pipefail
