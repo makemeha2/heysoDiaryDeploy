@@ -38,21 +38,14 @@ stages:
       displayName: Validate inputs
 
     - task: SSH@0
-      displayName: Debug paths on VM
+      displayName: Run deploy.sh on VM
       inputs:
-        sshEndpoint: 'heyso-prod-ssh'   # 실제 SSH 서비스 커넥션 이름
+        sshEndpoint: 'heyso-prod-ssh'   # <- SSH 서비스 커넥션 이름
         runOptions: 'commands'
         commands: |
           set -euo pipefail
-          echo "whoami=$(whoami)"
-          echo "pwd=$(pwd)"
-          echo "hostname=$(hostname)"
-          echo "ip=$(hostname -I || true)"
-          ls -al /opt/heyso || true
-          ls -al /opt/heyso/heysoDiaryDeploy || true
-          cd /opt/heyso/heysoDiaryDeploy
-          echo "after cd, pwd=$(pwd)"
-          ls -al
-          ls -al scripts || true
-          find . -maxdepth 3 -type f -name "deploy.sh" -print
+          export GHCR_USER='$(GHCR_USER)'
+          export GHCR_TOKEN='$(GHCR_TOKEN)'
 
+          chmod +x /opt/heyso/heysoDiaryDeploy/scripts/deploy.sh
+          /opt/heyso/heysoDiaryDeploy/scripts/deploy.sh '${{ parameters.mode }}' '${{ parameters.tag }}'
