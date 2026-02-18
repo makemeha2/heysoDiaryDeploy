@@ -8,7 +8,7 @@ resources:
     - repository: backend
       type: github
       name: makemeha2/HeysoDiaryBackEnd
-      endpoint: GITHUB_SERVICE_CONNECTION
+      endpoint: makemeha2
       ref: refs/heads/main
       trigger:
         branches:
@@ -18,7 +18,7 @@ resources:
     - repository: frontend
       type: github
       name: makemeha2/HeysoDiaryFrontEnd
-      endpoint: GITHUB_SERVICE_CONNECTION
+      endpoint: makemeha2
       ref: refs/heads/main
       trigger:
         branches:
