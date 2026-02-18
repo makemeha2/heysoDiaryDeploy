@@ -1,0 +1,125 @@
+name: Build and Push (Backend + Frontend)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: makemeha2/heyso-diary-api
+  FRONTEND_IMAGE: makemeha2/heyso-diary-web
+  MODE: prod
+  BACKEND_REPO: makemeha2/HeysoDiaryBackEnd
+  FRONTEND_REPO: makemeha2/HeysoDiaryFrontEnd
+  BACKEND_REF: main
+  FRONTEND_REF: main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (workflow repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.BACKEND_REPO }}
+          ref: ${{ env.BACKEND_REF }}
+          path: backend
+          token: ${{ secrets.CHECKOUT_PAT }}
+
+      - name: Checkout frontend
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FRONTEND_REPO }}
+          ref: ${{ env.FRONTEND_REF }}
+          path: frontend
+          token: ${{ secrets.CHECKOUT_PAT }}
+
+      - name: Compute tag (from backend commit)
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACK_SHA=$(git -C backend rev-parse --short HEAD)
+          echo "tag=prod-${BACK_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ steps.vars.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ steps.vars.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger Azure DevOps deploy
+        shell: bash
+        env:
+          AZDO_ORG_URL: ${{ secrets.AZDO_ORG_URL }}
+          AZDO_PROJECT: ${{ secrets.AZDO_PROJECT }}
+          AZDO_PIPELINE_ID: ${{ secrets.AZDO_PIPELINE_ID }}
+          AZDO_REF: ${{ secrets.AZDO_REF }}
+          AZDO_PAT: ${{ secrets.AZDO_PAT }}
+          DEPLOY_TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AZDO_ORG_URL}" ] || [ -z "${AZDO_PROJECT}" ] || [ -z "${AZDO_PIPELINE_ID}" ] || [ -z "${AZDO_PAT}" ]; then
+            echo "AZDO_* secrets are required"
+            exit 1
+          fi
+
+          REF_NAME="${AZDO_REF:-refs/heads/main}"
+          BODY=$(cat <<EOF
+          {
+            "resources": {
+              "repositories": {
+                "self": {
+                  "refName": "${REF_NAME}"
+                }
+              }
+            },
+            "templateParameters": {
+              "mode": "${MODE}",
+              "tag": "${DEPLOY_TAG}"
+            }
+          }
+EOF
+          )
+
+          curl -sS -u ":${AZDO_PAT}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "${AZDO_ORG_URL}/${AZDO_PROJECT}/_apis/pipelines/${AZDO_PIPELINE_ID}/runs?api-version=7.1" \
+            -d "${BODY}"

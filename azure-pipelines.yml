@@ -1,76 +1,55 @@
-trigger:
-  branches:
-    include:
-      - main
+trigger: none  # GitHub Actions가 API로 실행시킬 거라 자동 트리거 끔
 
-resources:
-  repositories:
-    - repository: backend
-      type: github
-      name: makemeha2/HeysoDiaryBackEnd
-      endpoint: makemeha2
-      ref: refs/heads/main
-    - repository: frontend
-      type: github
-      name: makemeha2/HeysoDiaryFrontEnd
-      endpoint: makemeha2
-      ref: refs/heads/main
+parameters:
+  - name: mode
+    type: string
+    default: prod
+    values:
+      - dev
+      - prod
+
+  - name: tag
+    type: string
+    default: ""   # 예: prod-a1b2c3d
 
 variables:
-  GHCR_REGISTRY: ghcr.io
-  GHCR_NAMESPACE: makemeha2
-  API_IMAGE: heyso-diary-api
-  WEB_IMAGE: heyso-diary-web
+  GHCR_USER: makemeha2
+  # GHCR_TOKEN 은 Azure DevOps secret variable(또는 variable group)로 저장해두세요
 
 stages:
-- stage: BuildPushDeployProd
-  displayName: Build & Push & Deploy (Self-hosted)
+- stage: Deploy
+  displayName: Deploy only (pull & up)
   jobs:
-  - job: BuildPushDeploy
-    displayName: Build/Push images then deploy on VM
+  - job: DeployJob
+    displayName: SSH deploy on VM
     pool:
-      name: heyso-deploy-prod
+      vmImage: ubuntu-latest
 
     steps:
-    - checkout: backend
-      path: backend
-
-    - checkout: frontend
-      path: frontend
+    - checkout: none
 
     - bash: |
         set -euo pipefail
-        SHORT=$(echo "$(Build.SourceVersion)" | cut -c1-7)
-        TAG="prod-${SHORT}"
-        echo "##vso[task.setvariable variable=TAG]$TAG"
-        echo "TAG=$TAG"
-      displayName: Set TAG
+        if [ -z "${{ parameters.tag }}" ]; then
+          echo "TAG is required"
+          exit 1
+        fi
+        echo "Deploying: mode=${{ parameters.mode }}, tag=${{ parameters.tag }}"
+      displayName: Validate inputs
 
-    - bash: |
-        set -euo pipefail
-        echo "$(GHCR_TOKEN)" | docker login $(GHCR_REGISTRY) -u "$(GHCR_USER)" --password-stdin
-      displayName: Docker login (GHCR)
+    - task: SSH@0
+      displayName: Run deploy.sh on VM
+      inputs:
+        sshEndpoint: 'makemeha2'   # <- SSH 서비스 커넥션 이름
+        runOptions: 'commands'
+        commands: |
+          set -euo pipefail
+          cd /opt/heyso/heysoDiaryDeploy
+          chmod +x ./scripts/deploy.sh
 
-    - bash: |
-        set -euo pipefail
-        docker build -t $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(API_IMAGE):$(TAG) "$(Pipeline.Workspace)/backend"
-        docker push $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(API_IMAGE):$(TAG)
-      displayName: Build & Push Backend
+          # ✅ 토큰은 환경변수로 전달 (로그 노출 위험 감소)
+          export GHCR_USER='$(GHCR_USER)'
+          export GHCR_TOKEN='$(GHCR_TOKEN)'
 
-    - bash: |
-        set -euo pipefail
-        docker build \
-          --build-arg VITE_GOOGLE_CLIENT_ID="$(VITE_GOOGLE_CLIENT_ID)" \
-          --build-arg VITE_API_BASE_URL="$(VITE_API_BASE_URL)" \
-          --build-arg VITE_APP_ENV="PROD" \
-          -t $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(WEB_IMAGE):$(TAG) \
-          "$(Pipeline.Workspace)/frontend"
-        docker push $(GHCR_REGISTRY)/$(GHCR_NAMESPACE)/$(WEB_IMAGE):$(TAG)
-      displayName: Build & Push Frontend
-
-    - bash: |
-        set -euo pipefail
-        cd /opt/heyso/heysoDiaryDeploy
-        chmod +x ./scripts/deploy.sh
-        ./scripts/deploy.sh prod $(TAG) $(GHCR_USER) $(GHCR_TOKEN)
-      displayName: Deploy on VM (compose pull + up)
+          # deploy.sh는 인자로도 받을 수 있고(호환), 환경변수도 사용할 수 있게 구성 권장
+          ./scripts/deploy.sh '${{ parameters.mode }}' '${{ parameters.tag }}'
