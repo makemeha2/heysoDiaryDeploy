@@ -95,28 +95,18 @@ jobs:
           DEPLOY_TAG: ${{ steps.vars.outputs.tag }}
         run: |
           set -euo pipefail
+
           if [ -z "${AZDO_ORG_URL}" ] || [ -z "${AZDO_PROJECT}" ] || [ -z "${AZDO_PIPELINE_ID}" ] || [ -z "${AZDO_PAT}" ]; then
             echo "AZDO_* secrets are required"
             exit 1
           fi
 
           REF_NAME="${AZDO_REF:-refs/heads/main}"
-          BODY=$(cat <<EOF
-          {
-            "resources": {
-              "repositories": {
-                "self": {
-                  "refName": "${REF_NAME}"
-                }
-              }
-            },
-            "templateParameters": {
-              "mode": "${MODE}",
-              "tag": "${DEPLOY_TAG}"
-            }
-          }
-EOF
-          )
+
+          BODY=$(printf '{"resources":{"repositories":{"self":{"refName":"%s"}}},"templateParameters":{"mode":"%s","tag":"%s"}}' \
+            "${REF_NAME}" "${MODE}" "${DEPLOY_TAG}")
+
+          echo "Triggering ADO pipeline ${AZDO_PIPELINE_ID} with tag=${DEPLOY_TAG} ref=${REF_NAME}"
 
           curl -sS -u ":${AZDO_PAT}" \
             -H "Content-Type: application/json" \
