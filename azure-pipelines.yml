@@ -38,18 +38,21 @@ stages:
       displayName: Validate inputs
 
     - task: SSH@0
-      displayName: Run deploy.sh on VM
+      displayName: Debug paths on VM
       inputs:
-        sshEndpoint: 'heyso-prod-ssh'   # <- SSH 서비스 커넥션 이름
+        sshEndpoint: 'heyso-prod-ssh'   # 실제 SSH 서비스 커넥션 이름
         runOptions: 'commands'
         commands: |
           set -euo pipefail
+          echo "whoami=$(whoami)"
+          echo "pwd=$(pwd)"
+          echo "hostname=$(hostname)"
+          echo "ip=$(hostname -I || true)"
+          ls -al /opt/heyso || true
+          ls -al /opt/heyso/heysoDiaryDeploy || true
           cd /opt/heyso/heysoDiaryDeploy
-          chmod +x ./scripts/deploy.sh
+          echo "after cd, pwd=$(pwd)"
+          ls -al
+          ls -al scripts || true
+          find . -maxdepth 3 -type f -name "deploy.sh" -print
 
-          # ✅ 토큰은 환경변수로 전달 (로그 노출 위험 감소)
-          export GHCR_USER='$(GHCR_USER)'
-          export GHCR_TOKEN='$(GHCR_TOKEN)'
-
-          # deploy.sh는 인자로도 받을 수 있고(호환), 환경변수도 사용할 수 있게 구성 권장
-          ./scripts/deploy.sh '${{ parameters.mode }}' '${{ parameters.tag }}'
