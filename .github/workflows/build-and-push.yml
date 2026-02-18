@@ -93,6 +93,7 @@ jobs:
           AZDO_REF: ${{ secrets.AZDO_REF }}
           AZDO_PAT: ${{ secrets.AZDO_PAT }}
           DEPLOY_TAG: ${{ steps.vars.outputs.tag }}
+          MODE: ${{ env.MODE }}
         run: |
           set -euo pipefail
 
