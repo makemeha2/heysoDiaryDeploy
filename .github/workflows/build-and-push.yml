@@ -138,33 +138,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy-on-vm:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy (SSH → git pull → docker compose pull/up)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          port: ${{ secrets.VM_PORT || 22 }}
-          script: |
-            set -euo pipefail
-            DEPLOY_DIR="${{ secrets.VM_DEPLOY_DIR || '/opt/heyso/heysoDiaryDeploy' }}"
-            cd "${DEPLOY_DIR}"
-            git pull
+  # deploy-on-vm:
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Deploy (SSH → git pull → docker compose pull/up)
+  #       uses: appleboy/ssh-action@v1.0.3
+  #       with:
+  #         host: ${{ secrets.VM_HOST }}
+  #         username: ${{ secrets.VM_USER }}
+  #         key: ${{ secrets.VM_SSH_KEY }}
+  #         port: ${{ secrets.VM_PORT || 22 }}
+  #         script: |
+  #           set -euo pipefail
+  #           DEPLOY_DIR="${{ secrets.VM_DEPLOY_DIR || '/opt/heyso/heysoDiaryDeploy' }}"
+  #           cd "${DEPLOY_DIR}"
+  #           git pull
 
-            MODE="${{ needs.build-and-push.outputs.mode }}"
-            DEPLOY_TAG="${{ needs.build-and-push.outputs.deploy_tag }}"
+  #           MODE="${{ needs.build-and-push.outputs.mode }}"
+  #           DEPLOY_TAG="${{ needs.build-and-push.outputs.deploy_tag }}"
 
-            # ✅ 배포 TAG 입력이 없으면(일반 push) latest로 배포하도록 설계했으니,
-            #    push 트리거는 TAG 생략(=latest)로 배포한다.
-            #    workflow_dispatch로 tag를 줬다면 그 tag로 배포할 수 있게 아래 분기.
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
-              echo "Deploying with explicit tag: ${DEPLOY_TAG}"
-              ./scripts/deploy.sh "${MODE}" "${DEPLOY_TAG}"
-            else
-              echo "Deploying with latest (no tag)"
-              ./scripts/deploy.sh "${MODE}"
-            fi
+  #           # ✅ 배포 TAG 입력이 없으면(일반 push) latest로 배포하도록 설계했으니,
+  #           #    push 트리거는 TAG 생략(=latest)로 배포한다.
+  #           #    workflow_dispatch로 tag를 줬다면 그 tag로 배포할 수 있게 아래 분기.
+  #           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+  #             echo "Deploying with explicit tag: ${DEPLOY_TAG}"
+  #             ./scripts/deploy.sh "${MODE}" "${DEPLOY_TAG}"
+  #           else
+  #             echo "Deploying with latest (no tag)"
+  #             ./scripts/deploy.sh "${MODE}"
+  #           fi
