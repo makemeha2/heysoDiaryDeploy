@@ -1,10 +1,26 @@
-name: Build and Push (Backend + Frontend)
+name: Build, Push, Deploy (Backend + Frontend)
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Deploy tag (optional). If empty, deploys latest."
+        required: false
+        default: ""
+      mode:
+        description: "dev or prod"
+        required: false
+        default: "prod"
+      backend_ref:
+        description: "Backend git ref (branch/tag/sha)"
+        required: false
+        default: "main"
+      frontend_ref:
+        description: "Frontend git ref (branch/tag/sha)"
+        required: false
+        default: "main"
 
 permissions:
   contents: read
@@ -17,103 +33,138 @@ env:
   MODE: prod
   BACKEND_REPO: makemeha2/HeysoDiaryBackEnd
   FRONTEND_REPO: makemeha2/HeysoDiaryFrontEnd
-  BACKEND_REF: main
-  FRONTEND_REF: main
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      deploy_tag: ${{ steps.meta.outputs.deploy_tag }}
+      mode: ${{ steps.meta.outputs.mode }}
     steps:
       - name: Checkout (workflow repo)
         uses: actions/checkout@v4
+
+      - name: Resolve inputs
+        id: meta
+        run: |
+          set -euo pipefail
+          MODE_INPUT="${{ github.event.inputs.mode }}"
+          MODE="${MODE_INPUT:-prod}"
+          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+
+          # deploy tag: if workflow_dispatch inputs.tag provided -> use that
+          # else for push -> use "prod-<shortsha>" and also update latest
+          TAG_INPUT="${{ github.event.inputs.tag }}"
+          if [ -n "${TAG_INPUT}" ]; then
+            DEPLOY_TAG="${TAG_INPUT}"
+          else
+            SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+            DEPLOY_TAG="prod-${SHORT_SHA}"
+          fi
+          echo "deploy_tag=${DEPLOY_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout backend
         uses: actions/checkout@v4
         with:
           repository: ${{ env.BACKEND_REPO }}
-          ref: ${{ env.BACKEND_REF }}
+          ref: ${{ github.event.inputs.backend_ref || 'main' }}
           path: backend
-          token: ${{ secrets.CHECKOUT_PAT }}
+          token: ${{ secrets.CHECKOUT_PAT || github.token }}
 
       - name: Checkout frontend
         uses: actions/checkout@v4
         with:
           repository: ${{ env.FRONTEND_REPO }}
-          ref: ${{ env.FRONTEND_REF }}
+          ref: ${{ github.event.inputs.frontend_ref || 'main' }}
           path: frontend
-          token: ${{ secrets.CHECKOUT_PAT }}
+          token: ${{ secrets.CHECKOUT_PAT || github.token }}
 
-      - name: Compute tag (from backend commit)
-        id: vars
-        shell: bash
-        run: |
-          set -euo pipefail
-          BACK_SHA=$(git -C backend rev-parse --short HEAD)
-          echo "tag=prod-${BACK_SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.GHCR_USER }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Build and push backend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -------------------------
+      # Build & Push Backend
+      # -------------------------
+      - name: Backend image meta
+        id: be_meta
+        run: |
+          set -euo pipefail
+          DEPLOY_TAG="${{ steps.meta.outputs.deploy_tag }}"
+          echo "be_tag=${DEPLOY_TAG}" >> "$GITHUB_OUTPUT"
+          echo "be_latest=latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Backend
         uses: docker/build-push-action@v6
         with:
-          context: backend
-          file: backend/Dockerfile
+          context: ./backend
+          file: ./backend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ steps.vars.outputs.tag }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ steps.be_meta.outputs.be_tag }}
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push frontend
+      # -------------------------
+      # Build & Push Frontend
+      # -------------------------
+      - name: Frontend image meta
+        id: fe_meta
+        run: |
+          set -euo pipefail
+          DEPLOY_TAG="${{ steps.meta.outputs.deploy_tag }}"
+          echo "fe_tag=${DEPLOY_TAG}" >> "$GITHUB_OUTPUT"
+          echo "fe_latest=latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Frontend
         uses: docker/build-push-action@v6
         with:
-          context: frontend
-          file: frontend/Dockerfile
+          context: ./frontend
+          file: ./frontend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ steps.vars.outputs.tag }}
           build-args: |
             VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}
             VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ steps.fe_meta.outputs.fe_tag }}
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trigger Azure DevOps deploy
-        shell: bash
-        env:
-          AZDO_ORG_URL: ${{ secrets.AZDO_ORG_URL }}
-          AZDO_PROJECT: ${{ secrets.AZDO_PROJECT }}
-          AZDO_PIPELINE_ID: ${{ secrets.AZDO_PIPELINE_ID }}
-          AZDO_REF: ${{ secrets.AZDO_REF }}
-          AZDO_PAT: ${{ secrets.AZDO_PAT }}
-          DEPLOY_TAG: ${{ steps.vars.outputs.tag }}
-          MODE: ${{ env.MODE }}
-        run: |
-          set -euo pipefail
+  deploy-on-vm:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy (SSH → git pull → docker compose pull/up)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.VM_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            DEPLOY_DIR="${{ secrets.VM_DEPLOY_DIR || '/opt/heyso/heysoDiaryDeploy' }}"
+            cd "${DEPLOY_DIR}"
+            git pull
 
-          if [ -z "${AZDO_ORG_URL}" ] || [ -z "${AZDO_PROJECT}" ] || [ -z "${AZDO_PIPELINE_ID}" ] || [ -z "${AZDO_PAT}" ]; then
-            echo "AZDO_* secrets are required"
-            exit 1
-          fi
+            MODE="${{ needs.build-and-push.outputs.mode }}"
+            DEPLOY_TAG="${{ needs.build-and-push.outputs.deploy_tag }}"
 
-          REF_NAME="${AZDO_REF:-refs/heads/main}"
-
-          BODY=$(printf '{"resources":{"repositories":{"self":{"refName":"%s"}}},"templateParameters":{"mode":"%s","tag":"%s"}}' \
-            "${REF_NAME}" "${MODE}" "${DEPLOY_TAG}")
-
-          echo "Triggering ADO pipeline ${AZDO_PIPELINE_ID} with tag=${DEPLOY_TAG} ref=${REF_NAME}"
-
-          curl -sS -u ":${AZDO_PAT}" \
-            -H "Content-Type: application/json" \
-            -X POST \
-            "${AZDO_ORG_URL}/${AZDO_PROJECT}/_apis/pipelines/${AZDO_PIPELINE_ID}/runs?api-version=7.1" \
-            -d "${BODY}"
+            # ✅ 배포 TAG 입력이 없으면(일반 push) latest로 배포하도록 설계했으니,
+            #    push 트리거는 TAG 생략(=latest)로 배포한다.
+            #    workflow_dispatch로 tag를 줬다면 그 tag로 배포할 수 있게 아래 분기.
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+              echo "Deploying with explicit tag: ${DEPLOY_TAG}"
+              ./scripts/deploy.sh "${MODE}" "${DEPLOY_TAG}"
+            else
+              echo "Deploying with latest (no tag)"
+              ./scripts/deploy.sh "${MODE}"
+            fi
