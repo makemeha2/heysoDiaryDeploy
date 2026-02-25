@@ -1,7 +1,7 @@
 services:
   db:
-    # 운영에서는 DB 포트를 외부에 열지 않음 (ports 제거)
-    ports: []
+    ports:
+      - "127.0.0.1:3306:3306"
 
   web:
     ports:
