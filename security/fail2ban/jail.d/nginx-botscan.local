@@ -1,0 +1,10 @@
+[nginx-botscan]
+enabled = true
+filter = nginx-botscan
+port = http,https
+logpath = /opt/heyso/heysoDiaryDeploy/logs/nginx/access.log
+backend = auto
+findtime = 10m
+maxretry = 5
+bantime = 24h
+action = %(action_)s
