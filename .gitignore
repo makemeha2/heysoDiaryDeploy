@@ -29,6 +29,11 @@ docker-compose.override.yml
 *.log
 logs/
 docker-logs/
+!logs/
+logs/*
+!logs/nginx/
+logs/nginx/*
+!logs/nginx/.gitkeep
 
 #################################################
 # OS Files
