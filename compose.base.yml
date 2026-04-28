@@ -36,6 +36,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASS}
       SERVER_PORT: 19090
+      JWT_SECRET: ${JWT_SECRET}
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:19090/actuator/health || echo 000); [ \"$$code\" -lt 500 ]"]
       interval: 10s
