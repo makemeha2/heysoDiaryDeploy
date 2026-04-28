@@ -3,10 +3,13 @@ services:
     image: mariadb:11.4
     container_name: heyso-db
     environment:
+      TZ: Asia/Seoul
       MARIADB_DATABASE: ${DB_NAME}
       MARIADB_USER: ${DB_USER}
       MARIADB_PASSWORD: ${DB_PASS}
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASS}
+    command:
+      - --default-time-zone=+09:00
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:

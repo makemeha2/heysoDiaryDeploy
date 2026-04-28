@@ -11,3 +11,4 @@
 - [ ] nginx rate limit이 `/api/admin/**`에 완화 적용되는지 확인
 - [ ] `robots.txt`에 `/admin` 차단 규칙이 반영되었는지 확인
 - [ ] admin 페이지가 `meta noindex,nofollow`를 설정하는지 확인
+- [ ] DB 컨테이너 재기동 후 `SELECT @@global.time_zone, @@session.time_zone, NOW(), UTC_TIMESTAMP();`에서 `@@global.time_zone`이 `+09:00`이고 `NOW()`가 한국시간인지 확인
